@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -e
+
 # See https://XonqNopp.github.io/_build/html/git-sub.html
 
 CUR_DIR=$PWD
@@ -12,9 +15,9 @@ GITSUB_FILE="$TOP_DIR/.gitsub"
 
 function usageAndExit() {
 	echo "Usage:"
-	echo -e "\tgit sub clone path/to/sub [remote [ref]]"
+	echo -e "\tgit sub clone <remote path> [<destination directory> [<commitish>]]"
 	echo -e "\tgit sub init  # only the first time you want to work in an existing sub"
-	echo -e "\tgit sub st  # git status of main repo and all subs"
+	echo -e "\tgit sub status  # git status of main repo and all subs"
 	exit 1
 }
 
@@ -25,10 +28,28 @@ function appendToSubFile() {
 	echo -e "$sub\t$remote\t$ref" >> $GITSUB_FILE
 }
 
+###############################################################################
+# Clones a sub into the optionally specified directory
+# Globals:
+#	None
+# Arguments:
+#	$1	- Remote path to the sub
+#	$2	- (OPTIONAL) Directory path to the destination of the sub
+#	$3	- (OPTIONAL) The commitish to check out in the sub
+# Returns:
+#	None
+###############################################################################
 function subClone() {
 	# Add a new sub
-	sub="$1"
-	remote="$2"
+	remote="$1"
+
+	if [ $# -gt 1 ]; then
+		sub="$2"
+	else
+		sub=${1%.git*}
+		sub=${sub##*/}
+	fi
+
 	ref=""
 	if [ $# = 3 ]; then
 		ref="$3"
@@ -53,24 +74,14 @@ function subClone() {
 
 	cd $sub
 
-	# init
-	git init
-
-	echo "Add remote $remoteName: $remote"
-	git remote add $remoteName $remote
-
-	# fetch
-	echo "Fetching..."
-	git fetch $remoteName
-
-	# ref
-	if [ "$ref" != "" ]; then
-		echo "Checkout $ref"
-		git checkout -f $ref
+	if [ -z "$ref" ]; then
+		git clone $remote . --quiet
+		ref=$(git symbolic-ref --short HEAD) 
 	else
-		# Use default branch as stored ref
-		ref=$(git branch --color=never 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+		git clone $remote . --branch $ref --quiet
 	fi
+
+	subHead=$(git rev-parse HEAD)
 
 	cd - > /dev/null
 
@@ -83,9 +94,9 @@ function subClone() {
 
 	git add $GITSUB_FILE
 
-	commitMessage="adding new sub $sub@$ref from $remote"
+	commitMessage="Adding new sub $sub@$ref from $remote"
 	echo "git commit: $commitMessage"
-	git commit -m "$commitMessage"
+	git commit -m "$commitMessage" -m " sub HEAD was @ $subHead"
 
 	cd $CUR_DIR
 
@@ -228,4 +239,3 @@ case $action in
 esac
 
 cd $CUR_DIR
-
