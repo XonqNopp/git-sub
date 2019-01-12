@@ -74,12 +74,13 @@ function subClone() {
 
 	cd $sub
 
+	git clone $remote . --quiet --no-checkout
+
 	if [ -z "$ref" ]; then
-		git clone $remote . --quiet
 		ref=$(git symbolic-ref --short HEAD) 
-	else
-		git clone $remote . --branch $ref --quiet
 	fi
+
+	git checkout $ref
 
 	subHead=$(git rev-parse HEAD)
 
