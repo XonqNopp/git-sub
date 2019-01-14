@@ -1,8 +1,8 @@
 #!/bin/bash
+# See https://XonqNopp.github.io/output/git-sub.html
 
 set -e
 
-# See https://XonqNopp.github.io/_build/html/git-sub.html
 
 CUR_DIR=$PWD
 TOP_DIR=$(git rev-parse --show-toplevel)
@@ -65,7 +65,7 @@ function subClone() {
 		exit 1
 	fi
 
-	if grep -q $sub $GITSUB_FILE 2> /dev/null; then
+	if grep -q -e "^$sub" $GITSUB_FILE 2> /dev/null; then
 		echo "Error: sub '$sub' already in .gitsub file"
 		exit 1
 	fi
@@ -82,7 +82,16 @@ function subClone() {
 
 	git checkout $ref
 
-	subHead=$(git rev-parse HEAD)
+	namedRef=$ref
+
+	# Store commit in sub file
+	ref=$(git rev-parse HEAD)
+
+	if [ "$namedRef" = "$ref" ]; then
+		namedRef=""
+	else
+		namedRef=" = $namedRef"
+	fi
 
 	cd - > /dev/null
 
@@ -95,9 +104,9 @@ function subClone() {
 
 	git add $GITSUB_FILE
 
-	commitMessage="Adding new sub $sub@$ref from $remote"
+	commitMessage="adding new sub $sub@${ref0:8}$namedRef from $remote"
 	echo "git commit: $commitMessage"
-	git commit -m "$commitMessage" -m " sub HEAD was @ $subHead"
+	git commit -m "$commitMessage"
 
 	cd $CUR_DIR
 
@@ -108,8 +117,8 @@ function subClone() {
 function subInit() {
 	# Init existing subs the first time
 	for sub in $(cat $GITSUB_FILE | cut -f1); do
-		remote=$(grep $sub $GITSUB_FILE | cut -f2)
-		ref=$(grep $sub $GITSUB_FILE | cut -f3)
+		remote=$(grep -e "^$sub" $GITSUB_FILE | cut -f2)
+		ref=$(grep -e "^$sub" $GITSUB_FILE | cut -f3)
 
 		echo "git sub init $sub: running..."
 		cd $sub
@@ -173,17 +182,25 @@ function subStatus() {
 		thisStatus=$(git status -s | wc -l)
 		thisRemote=$(git status -sb | head -n 1)
 		thisBranch=$(git branch --color=never 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
-		ref=$(grep $sub $GITSUB_FILE | cut -f3)
+		thisRef=$(git rev-parse HEAD)
+		thisShortRef=$(git rev-parse --short HEAD)
+		ref=$(grep -e "^$sub" $GITSUB_FILE | cut -f3)
 
-		if [ "$ref" != "$thisBranch" ]; then
-			sed -i "s/^\($sub\t[^\t]\+\t\)$ref/\1$thisBranch/" $GITSUB_FILE
+		if [ "${thisBranch:0:15}" = "(HEAD detached" ]; then
+			thisBranch=""
+		else
+			thisBranch=" = $thisBranch"
+		fi
+
+		if [ "$ref" != "$thisRef" ]; then
+			sed -i "s/^\($sub\t[^\t]\+\t\)$ref/\1$thisRef/" $GITSUB_FILE
 		fi
 
 		cd - > /dev/null
 
 		echo -n "$sub: "
 		if [ "$thisStatus" = "0" ]; then
-			echo "clean @$thisBranch"
+			echo "clean @$thisShortRef$thisBranch"
 
 			if [[ "$thisRemote" != *"..."* ]]; then
 				echo "WARNING: the sub's branch is not remotely tracked yet."
@@ -198,7 +215,7 @@ function subStatus() {
 			fi
 
 		else
-			echo "dirty @$thisBranch"
+			echo "dirty @$thisShortRef$thisBranch"
 
 			if [[ "$main" != *"$sub/"* ]]; then
 				echo "WARNING: we have changes committed to main repo BUT NOT to sub's remote."
@@ -240,3 +257,4 @@ case $action in
 esac
 
 cd $CUR_DIR
+
