@@ -1,16 +1,23 @@
 #!/bin/bash
 # See https://XonqNopp.github.io/output/git-sub.html
 
-set -e
-
 
 CUR_DIR=$PWD
-TOP_DIR=$(git rev-parse --show-toplevel)
-if [ "$TOP_DIR" = "" ]; then
+TOP_DIR=$(git rev-parse --show-toplevel 2> /dev/null)
+if [ $? = 128 ]; then
+	echo "Not a git repository"
+	exit 128
+fi
+# Just to be sure we have a repo, but the previous test should already fail
+if [ -z "$TOP_DIR" ]; then
 	echo "Not a git repository"
 	exit 1
 fi
 GITSUB_FILE="$TOP_DIR/.gitsub"
+
+
+# Abort on error:
+set -e
 
 
 function usageAndExit() {
@@ -60,13 +67,13 @@ function subClone() {
 		exit 1
 	fi
 	
-	if [ -d "$sub" ]; then
+	if [ -e "$sub" ]; then
 		echo "Error: path '$sub' already exists"
 		exit 1
 	fi
 
-	if grep -q -e "^$sub" $GITSUB_FILE 2> /dev/null; then
-		echo "Error: sub '$sub' already in .gitsub file"
+	if grep -q -e "^$sub	" $GITSUB_FILE 2> /dev/null; then
+		echo "Error: sub '$sub' already in .gitsub file but path not present, maybe it was moved?"
 		exit 1
 	fi
 
@@ -104,7 +111,7 @@ function subClone() {
 
 	git add $GITSUB_FILE
 
-	commitMessage="adding new sub $sub@${ref0:8}$namedRef from $remote"
+	commitMessage="adding new sub $sub@${ref:0:8}$namedRef from $remote"
 	echo "git commit: $commitMessage"
 	git commit -m "$commitMessage"
 
@@ -117,15 +124,14 @@ function subClone() {
 function subInit() {
 	# Init existing subs the first time
 	for sub in $(cat $GITSUB_FILE | cut -f1); do
-		remote=$(grep -e "^$sub" $GITSUB_FILE | cut -f2)
-		ref=$(grep -e "^$sub" $GITSUB_FILE | cut -f3)
+		remote=$(grep -e "^$sub	" $GITSUB_FILE | cut -f2)
+		ref=$(grep -e "^$sub	" $GITSUB_FILE | cut -f3)
 
-		echo "git sub init $sub: running..."
+		echo "git sub [$sub]: init remote=$remote ref=$ref"
 		cd $sub
 
 		# init
 		if [ ! -d ".git" ]; then
-			echo "git init"
 			git init
 		fi
 
@@ -184,13 +190,19 @@ function subStatus() {
 		thisBranch=$(git branch --color=never 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 		thisRef=$(git rev-parse HEAD)
 		thisShortRef=$(git rev-parse --short HEAD)
-		ref=$(grep -e "^$sub" $GITSUB_FILE | cut -f3)
+		ref=$(grep -e "^$sub	" $GITSUB_FILE | cut -f3)
 
-		if [ "${thisBranch:0:15}" = "(HEAD detached" ]; then
+		if [ "${thisRemote:0:19}" = "## HEAD (no branch)" ]; then
+			thisRemote=""
+		fi
+
+		if [ "${thisBranch:0:14}" = "(HEAD detached" ]; then
 			thisBranch=""
 		else
 			thisBranch=" = $thisBranch"
 		fi
+
+		#echo "$sub: status=$thisStatus   remote=$thisRemote   branch=$thisBranch   ref=$thisShortRef    from subfile=${ref:0:7}"
 
 		if [ "$ref" != "$thisRef" ]; then
 			sed -i "s/^\($sub\t[^\t]\+\t\)$ref/\1$thisRef/" $GITSUB_FILE
@@ -202,23 +214,29 @@ function subStatus() {
 		if [ "$thisStatus" = "0" ]; then
 			echo "clean @$thisShortRef$thisBranch"
 
-			if [[ "$thisRemote" != *"..."* ]]; then
-				echo "WARNING: the sub's branch is not remotely tracked yet."
+			if [[ ( "$thisRemote" != "" ) && ( "$thisRemote" != *"..."* ) ]]; then
+				echo "WARNING: the branch of sub '$sub' is not remotely tracked yet."
 				echo "Please push it to the remote ASAP."
 				exit 1
 			fi
 
-			if [[ "$thisRemote" == *"["* ]]; then
-				echo "WARNING: sub has local commits not pushed to its remote yet."
-				echo "Please push them to the remote ASAP."
+			if [[ ( "$thisRemote" != "" ) && ( "$thisRemote" == *"["* ) ]]; then
+				echo "WARNING: sub '$sub' local commits differ from its remote."
+				echo "Please sync with the remote ASAP."
 				exit 1
 			fi
 
 		else
 			echo "dirty @$thisShortRef$thisBranch"
 
+			if [[ ( "$thisBranch" == "" ) || ( "$thisRemote" == "" ) ]]; then
+				echo "WARNING: there are changes in the sub '$sub' but it is not on a branch"
+				echo "Please checkout to a branch in sub ASAP."
+				exit 1
+			fi
+
 			if [[ "$main" != *"$sub/"* ]]; then
-				echo "WARNING: we have changes committed to main repo BUT NOT to sub's remote."
+				echo "WARNING: we have changes committed to main repo BUT NOT to the remote of sub '$sub'."
 				echo "Please commit and push in sub ASAP."
 				exit 1
 			fi
@@ -252,6 +270,7 @@ case $action in
 		;;
 	*)
 		cd $CUR_DIR
+		echo "Unknown command: $action"
 		usageAndExit
 		;;
 esac
