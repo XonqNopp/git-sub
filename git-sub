@@ -205,7 +205,9 @@ function subStatus() {
 		#echo "$sub: status=$thisStatus   remote=$thisRemote   branch=$thisBranch   ref=$thisShortRef    from subfile=${ref:0:7}"
 
 		if [ "$ref" != "$thisRef" ]; then
-			sed -i "s/^\($sub\t[^\t]\+\t\)$ref/\1$thisRef/" $GITSUB_FILE
+			# Be careful to escape slash from sub otherwise sed thinks matching expr is finished and you get:
+			# sed: -e expression #1 char XX: unknown option to `s'
+			sed -i "s/^\(${sub/\//\\\/}\t[^\t]\+\)\t$ref/\1\t$thisRef/" $GITSUB_FILE
 		fi
 
 		cd - > /dev/null
