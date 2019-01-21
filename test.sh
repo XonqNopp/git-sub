@@ -320,7 +320,7 @@ function test_statusCleanNoRemote() {
 	cd $subName
 	git checkout master > /dev/null 2>&1
 	git branch --unset-upstream
-	cd ..
+	cd - > /dev/null 2>&1
 
 	myStdout=$($gitsub status)
 	assertEquals 'exit value' 1 $?
@@ -350,7 +350,7 @@ function test_satusCleanLocalCommits() {
 	touch new_file
 	git add new_file
 	git commit -m "new file" > /dev/null 2>&1
-	cd ..
+	cd - > /dev/null 2>&1
 
 	myStdout=$($gitsub status)
 	assertEquals 'exit value' 1 $?
@@ -378,7 +378,7 @@ function test_statusDirtyNothing() {
 	cd $subName
 	git checkout master > /dev/null 2>&1
 	echo "# one more line" >> README
-	cd ..
+	cd - > /dev/null 2>&1
 
 	myStdout=$($gitsub status)
 	assertEquals 'exit value' 0 $?
@@ -402,7 +402,7 @@ function test_statusDirtyNoBranch() {
 	# Do something inside sub
 	cd $subName
 	echo "# one more line" >> README
-	cd ..
+	cd - > /dev/null 2>&1
 
 	myStdout=$($gitsub status)
 	assertEquals 'exit value' 1 $?
@@ -428,7 +428,7 @@ function test_statusDirtyUncommitted() {
 	cd $subName
 	git checkout master > /dev/null 2>&1
 	echo "# one more line" >> README
-	cd ..
+	cd - > /dev/null 2>&1
 
 	# Commit in main
 	git add $subName/README
@@ -458,7 +458,7 @@ function test_statusUpdateRef() {
 	for sub in $(cat .gitsub | cut -f1); do
 		cd $sub
 		git checkout master > /dev/null 2>&1
-		cd ..
+		cd - > /dev/null 2>&1
 	done
 
 	# Do something inside subb
@@ -466,7 +466,41 @@ function test_statusUpdateRef() {
 	echo "again" >> README
 	git commit -m "changes coming" README > /dev/null 2>&1
 	git push > /dev/null 2>&1
-	cd ..
+	cd - > /dev/null 2>&1
+
+	myStdout=$($gitsub status)
+	assertEquals 'exit value' 0 $?
+
+	assertContains "$myStdout" "M  .gitsub"
+
+	if [ "$DEBUG" = "1" ]; then
+		echo "$myStdout"
+	fi
+}
+
+function test_statusUpdateRefSlash() {
+	# Test sub status updates ref if required
+
+	newClone "test_statusUpdateRefSlash"
+	$gitsub init > /dev/null 2>&1
+
+	mkdir newdir
+	subName="newdir/subb"
+	$gitsub clone $subSrc $subName > /dev/null 2>&1
+
+	# Prepare subs branches
+	for sub in $(cat .gitsub | cut -f1); do
+		cd $sub
+		git checkout master > /dev/null 2>&1
+		cd - > /dev/null 2>&1
+	done
+
+	# Do something inside subb
+	cd $subName
+	echo "again" >> README
+	git commit -m "changes coming" README > /dev/null 2>&1
+	git push > /dev/null 2>&1
+	cd - > /dev/null 2>&1
 
 	myStdout=$($gitsub status)
 	assertEquals 'exit value' 0 $?
