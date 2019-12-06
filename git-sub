@@ -144,9 +144,10 @@ function subClone() {
 	appendToSubFile $sub $remote $ref
 
 	# Cannot run `git add $sub` as it would be treated as submodule :-S
-	git add $sub/*
+	# Need -f to add files which would be ignored otherwise
+	git add -f $sub/*
 	# cannot do in one line or it is considered a submodule
-	git add $sub/.*  # ignores .git anyway
+	git add -f $sub/.*  # ignores .git anyway
 
 	git add $GITSUB_FILE
 
