@@ -200,12 +200,19 @@ function subInit() {
 		fi
 
 		# remote
-		remoteName="origin"
+		defaultRemote="origin"
+		remoteName="$defaultRemote"
 		if remoteExists $remoteName; then
 			remoteName="upstream"
 			if remoteExists $remoteName; then
 				remoteName=$(git remote | head -n 1)
 			fi
+		fi
+
+		if [ "$remoteName" = "" ]; then
+			remoteName="$defaultRemote"
+			echo "Add remote $remoteName: $remote"
+			git remote add $remoteName $remote
 		fi
 
 		# fetch
