@@ -18,6 +18,7 @@ GITSUB_FILE="$TOP_DIR/.gitsub"
 
 # Abort on error:
 set -e
+# TODO || exit 1 to x=$(...) ???
 
 
 ###############################################################################
@@ -43,7 +44,7 @@ function appendToSubFile() {
 	sub=$1
 	remote=$2
 	ref=$3
-	echo -e "$sub\t$remote\t$ref" >> "$GITSUB_FILE"
+	echo -e "$sub\t$remote\t$ref" >> "$GITSUB_FILE" || exit 1
 }
 
 
@@ -116,30 +117,32 @@ function subClone() {
 
 	stateClean
 
-	mkdir "$sub"
+	mkdir "$sub" || exit 1
 
-	cd "$sub"
+	# subshell so we do not need to care about restoring CWD
+	(
+		cd "$sub" || exit 1
 
-	git clone "$remote" . --quiet --no-checkout
+		git clone "$remote" . --quiet --no-checkout || exit 1
 
-	if [ -z "$ref" ]; then
-		ref=$(git symbolic-ref --short HEAD) 
-	fi
+		if [ -z "$ref" ]; then
+			ref=$(git symbolic-ref --short HEAD) 
+		fi
 
-	git checkout "$ref"
+		git checkout "$ref" || exit 1
 
-	namedRef=$ref
+		namedRef=$ref
 
-	# Store commit in sub file
-	ref=$(gitCommitHash)
+		# Store commit in sub file
+		ref=$(gitCommitHash)
 
-	if [ "$namedRef" = "$ref" ]; then
-		namedRef=""
-	else
-		namedRef=" = $namedRef"
-	fi
-
-	cd - > /dev/null
+		if [ "$namedRef" = "$ref" ]; then
+			namedRef=""
+		else
+			namedRef=" = $namedRef"
+		fi
+	)
+	# back to previous directory
 
 	appendToSubFile "$sub" "$remote" "$ref"
 
@@ -153,12 +156,12 @@ function subClone() {
 
 	commitMessage="adding new sub $sub@${ref:0:8}$namedRef from $remote"
 	echo "git commit: $commitMessage"
-	git commit -m "$commitMessage"
+	git commit -m "$commitMessage" || exit 1
 
-	cd "$CUR_DIR"
+	cd "$CUR_DIR" || exit 1
 
 	# check did not mess anything
-	git status -sb
+	git status -sb || exit 1
 }
 
 
@@ -188,6 +191,7 @@ function remoteExists() {
 function subInit() {
 	# Init existing subs the first time
 	cut -f1 "$GITSUB_FILE" | while read -r sub; do
+
 		remote=$(grep -e "^$sub	" "$GITSUB_FILE" | cut -f2)
 		ref=$(grep -e "^$sub	" "$GITSUB_FILE" | cut -f3)
 
@@ -199,7 +203,7 @@ function subInit() {
 
 			# init
 			if [ ! -d ".git" ]; then
-				git init
+				git init || exit 1
 			fi
 
 			# remote
@@ -215,22 +219,23 @@ function subInit() {
 			if [ "$remoteName" = "" ]; then
 				remoteName="$defaultRemote"
 				echo "Add remote $remoteName: $remote"
-				git remote add "$remoteName" "$remote"
+				git remote add "$remoteName" "$remote" || exit 1
 			fi
 
 			# fetch
 			echo "Fetching: $remoteName"
-			git fetch "$remoteName"
+			git fetch "$remoteName" || exit 1
 
 			# ref
 			echo "Checkout $ref"
-			git checkout -f "$ref"
+			git checkout -f "$ref" || exit 1
 		)
+		# back to previous directory
 	done
 
 	# check did not mess anything
-	cd "$CUR_DIR"
-	git status -sb
+	cd "$CUR_DIR" || exit 1
+	git status -sb || exit 1
 }
 
 
@@ -244,40 +249,42 @@ function updateGitsub() {
 
 	echo "updateGitsub($sub)"
 
-	cd "$sub"
+	# subshell so we do not need to care about restoring CWD
+	(
+		cd "$sub" || exit 1
 
-	if [ ! -d ".git" ]; then
-		echo "$sub: Not a git repository, are you sure you ran 'git sub init' in parent git repo yet?"
-		exit 1
-	fi
+		if [ ! -d ".git" ]; then
+			echo "$sub: Not a git repository, are you sure you ran 'git sub init' in parent git repo yet?"
+			exit 1
+		fi
 
-	thisStatusLines=$(git status -s | wc -l)
-	thisRemote=$(git status -sb | head -n 1)
-	thisBranch=$(git branch --color=never 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
-	thisRef=$(gitCommitHash)
-	thisShortRef=$(gitCommitHash --short)
-	ref=$(grep -e "^$sub	" "$GITSUB_FILE" | cut -f3)
+		thisStatusLines=$(git status -s | wc -l)
+		thisRemote=$(git status -sb | head -n 1)
+		thisBranch=$(git branch --color=never 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+		thisRef=$(gitCommitHash)
+		thisShortRef=$(gitCommitHash --short)
+		ref=$(grep -e "^$sub	" "$GITSUB_FILE" | cut -f3)
 
-	if [ "${thisRemote:0:19}" = "## HEAD (no branch)" ]; then
-		thisRemote=""
-	fi
+		if [ "${thisRemote:0:19}" = "## HEAD (no branch)" ]; then
+			thisRemote=""
+		fi
 
-	if [ "${thisBranch:0:14}" = "(HEAD detached" ]; then
-		thisBranch=""
-	else
-		thisBranch=" = $thisBranch"
-	fi
+		if [ "${thisBranch:0:14}" = "(HEAD detached" ]; then
+			thisBranch=""
+		else
+			thisBranch=" = $thisBranch"
+		fi
 
-	# DEBUG
-	#echo "$sub: status=$thisStatusLines   remote=$thisRemote   branch=$thisBranch   ref=$thisShortRef    from subfile=${ref:0:7}"
+		# DEBUG
+		#echo "$sub: status=$thisStatusLines   remote=$thisRemote   branch=$thisBranch   ref=$thisShortRef    from subfile=${ref:0:7}"
 
-	if [ "$ref" != "$thisRef" ]; then
-		# Be careful to escape slash from sub otherwise sed thinks matching expr is finished and you get:
-		# sed: -e expression #1 char XX: unknown option to `s'
-		sed -i "s/^\(${sub//\//\\\/}\t[^\t]\+\)\t$ref/\1\t$thisRef/" "$GITSUB_FILE"
-	fi
-
-	cd - > /dev/null
+		if [ "$ref" != "$thisRef" ]; then
+			# Be careful to escape slash from sub otherwise sed thinks matching expr is finished and you get:
+			# sed: -e expression #1 char XX: unknown option to `s'
+			sed -i "s/^\(${sub//\//\\\/}\t[^\t]\+\)\t$ref/\1\t$thisRef/" "$GITSUB_FILE" || exit 1
+		fi
+	)
+	# back to previous directory
 
 	echo -n "$sub: "
 
@@ -318,7 +325,7 @@ function updateGitsub() {
 # Checks status of all subs
 ###############################################################################
 function subStatus() {
-	git status -sb
+	git status -sb || exit 1
 	main=$(git status -s)
 
 	if [ ! -f "$GITSUB_FILE" ]; then
@@ -331,7 +338,7 @@ function subStatus() {
 
 	# In case it was modified when we were in the sub:
 	git add "$GITSUB_FILE"
-	git status -s "$GITSUB_FILE"  # and show it
+	git status -s "$GITSUB_FILE" || exit 1  # and show it
 }
 
 
@@ -355,32 +362,32 @@ function subUpdate() {
 		editCommitMessage=1
 	fi
 
-	# cd
-	cd "$sub"
+	# subshell so we do not need to care about restoring CWD
+	(
+		cd "$sub" || exit 1
 
-	# collect data: ref+namedRef
-	git fetch --all
-	git checkout "$namedRef"
+		# collect data: ref+namedRef
+		git fetch --all || exit 1
+		git checkout "$namedRef" || exit 1
 
-	ref=$(gitCommitHash)
+		ref=$(gitCommitHash)
 
-	if [ "$ref" = "$namedRef" ]; then
-		namedRef=""
-	else
-		namedRef=" = $namedRef"
-	fi
-
-	# cd -
-	cd - > /dev/null
+		if [ "$ref" = "$namedRef" ]; then
+			namedRef=""
+		else
+			namedRef=" = $namedRef"
+		fi
+	)
+	# back to previous directory
 
 	# update .gitsub
 	updateGitsub "$sub"
 
 	# git add .gitsub $sub
-	git add -f .gitsub "$sub"
+	git add -f .gitsub "$sub" || exit 1
 
 	# git commit -m "[$sub] update to ${ref:0:8} = $namedRef
-	git commit -m "[$sub] update to ${ref:0:8}$namedRef"
+	git commit -m "[$sub] update to ${ref:0:8}$namedRef" || exit 1
 
 	# if request change commit message: git commit --amend
 	if [ "$editCommitMessage" = "1" ]; then
@@ -390,6 +397,10 @@ function subUpdate() {
 
 
 
+###############################################################################
+###############################################################################
+# MAIN
+###############################################################################
 ###############################################################################
 
 
